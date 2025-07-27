@@ -86,6 +86,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         Route::get('/', [AdminOrderController::class, 'index'])->name('index');
         Route::get('/{order}', [AdminOrderController::class, 'show'])->name('show');
         Route::put('/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('update.status');
+        Route::put('/{order}/payment-status', [AdminOrderController::class, 'updatePaymentStatus'])->name('update.payment.status');
     });
 
     Route::prefix('messages')->name('messages.')->group(function () {

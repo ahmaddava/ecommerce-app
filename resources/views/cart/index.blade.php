@@ -40,6 +40,10 @@
                                                     </h6>
                                                     <small class="text-muted">Rp
                                                         {{ number_format($item->product->price, 0, ',', '.') }}</small>
+                                                    @if ($item->size)
+                                                        <br><small class="text-info"><i class="bi bi-rulers"></i> Ukuran:
+                                                            {{ strtoupper($item->size) }}</small>
+                                                    @endif
                                                 </div>
                                             </div>
 
@@ -49,16 +53,10 @@
                                                     @csrf
                                                     @method('PUT')
                                                     <div class="input-group input-group-sm">
-                                                        <button type="button"
-                                                            class="btn btn-outline-secondary quantity-btn"
-                                                            data-action="decrease">-</button>
                                                         <input type="number"
                                                             class="form-control text-center quantity-input" name="quantity"
                                                             value="{{ $item->quantity }}" min="1"
                                                             max="{{ $item->product->stock }}">
-                                                        <button type="button"
-                                                            class="btn btn-outline-secondary quantity-btn"
-                                                            data-action="increase">+</button>
                                                     </div>
                                                 </form>
                                             </div>
@@ -185,13 +183,27 @@
                 document.getElementById('cart-subtotal').textContent = formattedSubtotal;
                 document.getElementById('cart-total').textContent = formattedSubtotal;
 
-                // Update subtotal per item
+                // Update subtotal per item dan quantity input
                 cartData.cartItems.forEach(item => {
-                    const itemSubtotalEl = document.querySelector(
-                        `.cart-item[data-item-id="${item.id}"] .item-subtotal`);
-                    if (itemSubtotalEl) {
-                        itemSubtotalEl.textContent = 'Rp ' + (item.product.price * item.quantity)
-                            .toLocaleString('id-ID');
+                    const cartItemEl = document.querySelector(`.cart-item[data-item-id="${item.id}"]`);
+                    if (cartItemEl) {
+                        // Update subtotal
+                        const itemSubtotalEl = cartItemEl.querySelector('.item-subtotal');
+                        if (itemSubtotalEl) {
+                            itemSubtotalEl.textContent = 'Rp ' + (item.product.price * item.quantity)
+                                .toLocaleString('id-ID');
+                        }
+
+                        // Update quantity input
+                        const quantityInput = cartItemEl.querySelector('.quantity-input');
+                        if (quantityInput && quantityInput.value != item.quantity) {
+                            quantityInput.value = item.quantity;
+                        }
+
+                        // Update max attribute untuk quantity input
+                        if (quantityInput && item.product.stock) {
+                            quantityInput.setAttribute('max', item.product.stock);
+                        }
                     }
                 });
 
@@ -211,8 +223,9 @@
                     const form = btn.closest('form');
                     const input = form.querySelector('.quantity-input');
                     let quantity = parseInt(input.value);
+                    const maxStock = parseInt(input.getAttribute('max')) || 999;
 
-                    if (btn.dataset.action === 'increase' && quantity < parseInt(input.max)) {
+                    if (btn.dataset.action === 'increase' && quantity < maxStock) {
                         input.value = quantity + 1;
                     } else if (btn.dataset.action === 'decrease' && quantity > 1) {
                         input.value = quantity - 1;
@@ -225,9 +238,24 @@
             document.getElementById('cart-container').addEventListener('change', function(e) {
                 // Input kuantitas
                 if (e.target.classList.contains('quantity-input')) {
+                    const input = e.target;
+                    let quantity = parseInt(input.value);
+                    const maxStock = parseInt(input.getAttribute('max')) || 999;
+                    const minQuantity = parseInt(input.getAttribute('min')) || 1;
+
+                    // Validasi input
+                    if (isNaN(quantity) || quantity < minQuantity) {
+                        input.value = minQuantity;
+                        quantity = minQuantity;
+                    } else if (quantity > maxStock) {
+                        input.value = maxStock;
+                        quantity = maxStock;
+                        alert(`Stok maksimal untuk produk ini adalah ${maxStock}`);
+                    }
+
                     clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(() => {
-                        const form = e.target.closest('form');
+                        const form = input.closest('form');
                         handleCartAction(form, 'PUT');
                     }, 500); // Debounce 500ms
                 }

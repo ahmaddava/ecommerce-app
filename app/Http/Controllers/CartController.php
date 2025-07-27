@@ -33,23 +33,49 @@ class CartController extends Controller
      */
     public function add(Request $request)
     {
-        $request->validate(['product_id' => 'required|exists:products,id']);
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'size' => 'nullable|string'
+        ]);
+
         $quantity = $request->input('quantity', 1);
+        $size = $request->input('size');
         $product = Product::findOrFail($request->product_id);
 
-        // Validasi stok
-        if ($product->stock < $quantity) {
-            return response()->json(['success' => false, 'message' => 'Stok produk tidak mencukupi.'], 422);
+        // Validasi stok berdasarkan ukuran atau produk
+        if ($product->has_sizes && $size) {
+            $productSize = $product->sizes()->where('size', $size)->first();
+            if (!$productSize || $productSize->stock < $quantity) {
+                return response()->json(['success' => false, 'message' => 'Stok produk ukuran ' . strtoupper($size) . ' tidak mencukupi.'], 422);
+            }
+        } else if (!$product->has_sizes) {
+            if ($product->stock < $quantity) {
+                return response()->json(['success' => false, 'message' => 'Stok produk tidak mencukupi.'], 422);
+            }
         }
 
-        $cartItem = Cart::where('user_id', Auth::id())->where('product_id', $product->id)->first();
+        // Cari item keranjang yang sama (produk dan ukuran)
+        $cartItem = Cart::where('user_id', Auth::id())
+            ->where('product_id', $product->id)
+            ->where('size', $size)
+            ->first();
 
         if ($cartItem) {
             // Jika produk sudah ada, update kuantitasnya
             $newQuantity = $cartItem->quantity + $quantity;
-            if ($product->stock < $newQuantity) {
-                return response()->json(['success' => false, 'message' => 'Stok produk tidak mencukupi untuk jumlah ini.'], 422);
+
+            // Validasi stok lagi untuk quantity baru
+            if ($product->has_sizes && $size) {
+                $productSize = $product->sizes()->where('size', $size)->first();
+                if (!$productSize || $productSize->stock < $newQuantity) {
+                    return response()->json(['success' => false, 'message' => 'Stok produk ukuran ' . strtoupper($size) . ' tidak mencukupi untuk jumlah ini.'], 422);
+                }
+            } else if (!$product->has_sizes) {
+                if ($product->stock < $newQuantity) {
+                    return response()->json(['success' => false, 'message' => 'Stok produk tidak mencukupi untuk jumlah ini.'], 422);
+                }
             }
+
             $cartItem->increment('quantity', $quantity);
         } else {
             // Jika produk belum ada, buat entri baru
@@ -57,6 +83,7 @@ class CartController extends Controller
                 'user_id' => Auth::id(),
                 'product_id' => $product->id,
                 'quantity' => $quantity,
+                'size' => $size,
             ]);
         }
 

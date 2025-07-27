@@ -42,20 +42,61 @@ class CategoryController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name',
-            'description' => 'nullable|string',
-            'is_active' => 'boolean'
-        ]);
+        try {
+            // Log input data untuk debugging
+            Log::info('Category Store Request', [
+                'name' => $request->name,
+                'description' => $request->description,
+                'is_active' => $request->has('is_active'),
+                'all_input' => $request->all()
+            ]);
 
-        Category::create([
-            'name' => $request->name,
-            'description' => $request->description,
-            'is_active' => $request->has('is_active') ? true : false
-        ]);
+            $request->validate([
+                'name' => 'required|string|max:255|unique:categories,name',
+                'description' => 'nullable|string|max:1000',
+                'is_active' => 'boolean'
+            ]);
 
-        return redirect()->route('admin.categories.index')
-            ->with('success', 'Kategori berhasil ditambahkan.');
+            // Prepare data untuk create
+            $categoryData = [
+                'name' => trim($request->name),
+                'description' => $request->description ? trim($request->description) : null,
+                'is_active' => $request->has('is_active') ? true : false
+            ];
+
+            Log::info('Category Store Data', $categoryData);
+
+            // Create kategori baru
+            $category = Category::create($categoryData);
+
+            Log::info('Category Store Result', [
+                'created' => $category ? true : false,
+                'category_id' => $category ? $category->id : null,
+                'category_data' => $category ? $category->toArray() : null
+            ]);
+
+            if ($category) {
+                return redirect()->route('admin.categories.index')
+                    ->with('success', 'Kategori "' . $category->name . '" berhasil ditambahkan.');
+            } else {
+                return redirect()->back()
+                    ->with('error', 'Gagal menambahkan kategori.')
+                    ->withInput();
+            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Category Store Validation Error', [
+                'errors' => $e->errors(),
+                'input' => $request->all()
+            ]);
+            return redirect()->back()->withErrors($e->errors())->withInput();
+        } catch (\Exception $e) {
+            Log::error('Category Store Exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'input' => $request->all()
+            ]);
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage())->withInput();
+        }
     }
 
     /**
@@ -149,18 +190,70 @@ class CategoryController extends Controller
      */
     public function destroy($id)
     {
-        $category = Category::findOrFail($id);
+        try {
+            $category = Category::findOrFail($id);
 
-        // Check if category has products
-        if ($category->products()->count() > 0) {
+            // Log delete attempt
+            Log::info('Category Delete Request', [
+                'category_id' => $id,
+                'category_name' => $category->name,
+                'products_count' => $category->products()->count()
+            ]);
+
+            // Check if category has products
+            $productsCount = $category->products()->count();
+            if ($productsCount > 0) {
+                Log::warning('Category Delete Blocked - Has Products', [
+                    'category_id' => $id,
+                    'category_name' => $category->name,
+                    'products_count' => $productsCount
+                ]);
+
+                return redirect()->route('admin.categories.index')
+                    ->with('error', 'Kategori "' . $category->name . '" tidak dapat dihapus karena masih memiliki ' . $productsCount . ' produk.');
+            }
+
+            // Store category name for success message
+            $categoryName = $category->name;
+
+            // Delete the category
+            $deleted = $category->delete();
+
+            if ($deleted) {
+                Log::info('Category Delete Success', [
+                    'category_id' => $id,
+                    'category_name' => $categoryName
+                ]);
+
+                return redirect()->route('admin.categories.index')
+                    ->with('success', 'Kategori "' . $categoryName . '" berhasil dihapus.');
+            } else {
+                Log::error('Category Delete Failed', [
+                    'category_id' => $id,
+                    'category_name' => $categoryName
+                ]);
+
+                return redirect()->route('admin.categories.index')
+                    ->with('error', 'Gagal menghapus kategori "' . $categoryName . '".');
+            }
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::error('Category Delete - Not Found', [
+                'category_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
             return redirect()->route('admin.categories.index')
-                ->with('error', 'Kategori tidak dapat dihapus karena masih memiliki produk.');
+                ->with('error', 'Kategori tidak ditemukan.');
+        } catch (\Exception $e) {
+            Log::error('Category Delete Exception', [
+                'category_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->route('admin.categories.index')
+                ->with('error', 'Terjadi kesalahan saat menghapus kategori: ' . $e->getMessage());
         }
-
-        $category->delete();
-
-        return redirect()->route('admin.categories.index')
-            ->with('success', 'Kategori berhasil dihapus.');
     }
 
     /**
